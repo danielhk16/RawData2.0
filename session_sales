@@ -1,0 +1,259 @@
+# -*- coding: utf-8 -*-
+"""
+@author: Chonglou
+"""
+
+import time
+import csv
+import numpy as np
+import pandas as pd
+from sqlalchemy import create_engine
+
+t0 = time.time()
+t0 = time.time()
+NewEcom = create_engine('mysql+pymysql://jm01:Arc@201801@localhost:3306/jm01')
+
+rng = pd.date_range('1/1/2011', '12/31/2018 ', freq='H')
+rng = rng[:-1]
+df = pd.DataFrame(data={'dayofweek': rng.dayofweek + 1,
+                        'hr': rng.hour,
+                        'promotion': 0,
+                        'visits': 0,
+                        }, index=rng)
+
+
+def key_datetime(df, vis):  # 以时间为主键
+    promotion_date = np.array([(1, 1),  # 新年
+                               (2, 14),  # 情人节
+                               (3, 17),  # 圣巴特里克节
+                               (7, 1),  # 加拿大国庆日
+                               (10, 31),  # 万圣节
+                               (12, 25)])  # 圣诞
+    clearance_date = np.column_stack((np.ones(7), np.array(np.arange(25, 32))))
+    for month, day in promotion_date:
+        df.loc[(df.index.month == month) & (df.index.day == day),
+               'promotion'] = month * 100 + day
+    for month, day in clearance_date:
+        df.loc[(df.index.month == month) & (
+            df.index.day == day), 'promotion'] = 1
+    df['promotion_mod'] = df['promotion'].apply(promotion_mod)
+    df['hr_mod'] = df['hr'].apply(hr_mod)
+    df['dayofweek_mod'] = df['dayofweek'].apply(dayofweek_mod)
+    df['mod'] = df['hr_mod'] * \
+        (df[['promotion_mod', 'dayofweek_mod']].max(axis=1))
+    df['prob'] = df['mod'] / df['mod'].sum()
+    df['interval'] = df['prob'].cumsum()
+    n = 0
+    while n < vis:
+        a = np.random.random()
+        locator = df[df['interval'] > a]['interval'].index.min()
+        df.loc[locator, 'visits'] += 1
+        n += 1
+        print('df 3 {0} is done'.format(n))
+
+    result = df[['visits', 'prob']]
+    return result
+
+
+def key_vis(df1, df2):  # 以vis为主键
+    a = df1['visits']
+    b = [0]
+    df_addr = pd.read_sql(
+        'select DISTINCT city, province, count(*) as freq from customer GROUP BY city order by freq desc', NewEcom)
+    df_addr['prob'] = df_addr['freq']/df_addr['freq'].sum()
+    df_addr['interval'] = df_addr['prob'].cumsum()
+    df_sd = pd.read_sql(
+        'select websites, prob, jmp_prob from source_domain', NewEcom)
+    df_sd['interval'] = df_sd['prob'].cumsum()
+    # 分配商城
+    # df2['store_mod'] = df2['store_para'].apply(lambda x: 1.1 if x <= 0.05 else 0.9)  #天猫旗舰店=1.1的跳出率影响，官网商城=0.9的跳出率影响
+    #df2['store']=df2['store_mod'].apply(lambda x: 'ningning.tmall.com' if x > 1 else 'ningning.com')
+    # 分配时间戳
+    for i in range(0, len(a)):  # i: 0-21865（共两年半的小时-时间戳）
+        b.append(b[i]+a[i])  # 将 a 转化为斐波那契数列 b
+        if a[i] != 0:  # 排除vis=0的时间戳
+            df2.loc[(df2.index >= b[i]) & (df2.index < b[i+1]),
+                    'datetime'] = df1.index[i]
+    n = 0
+    while n < vis:
+        # 分配地址
+        #c = np.random.random()
+        locator1 = df_addr[df_addr['interval'] >
+                           df2.loc[n, 'addr_para']]['interval'].index.min()
+        df2.loc[n, 'city'] = df_addr.loc[locator1, 'city']
+        df2.loc[n, 'province'] = df_addr.loc[locator1, 'province']
+        # 分配来源域名
+        #d = np.random.random()
+        locator2 = df_sd[df_sd['interval'] >
+                         df2.loc[n, 'sd_para']]['interval'].index.min()
+        df2.loc[n, 'sd'] = df_sd.loc[locator2, 'websites']
+        #df2.loc[n, 'jmp_prob'] = df_sd.loc[locator2, 'jmp_prob']*df2.loc[locator2, 'store_mod']
+        n += 1
+        print('df 1 {0} is done'.format(n))
+    #分配cookie,ip给城市———————————————————————————————————————————————————————#
+    df2['cookie'] = 1
+    df2['ck_para'] = df2['ck_para'].apply(
+        lambda x: 1 if x <= 0.99 else 0)  # 99%
+    df2['ip'] = 1
+    df2['ip_para'] = df2['ip_para'].apply(
+        lambda x: 1 if x <= 0.92 else 0)  # 92%
+
+    indx = df2['city'].index  # indx是一个pandas series
+
+    for c1 in df_addr['city']:
+        lct = df2[df2['city'] == c1]['city'].index  # 遍历df2中所有相同城市的索引
+        for locat in lct:
+            # 从idx中删去每一个lct, indx变成一个list
+            indx = [x for x in indx if x != locat]
+        i = 1
+        while i < len(lct):
+            if df2.loc[lct[i], 'ck_para'] == 1:
+                df2.loc[lct[i], 'cookie'] = df2.loc[lct[i-1], 'cookie'] + 1
+            else:
+                df2.loc[lct[i], 'cookie'] = df2.loc[lct[i-1], 'cookie']
+            i += 1
+        j = 1
+        while j < len(lct):
+            if df2.loc[lct[j], 'ip_para'] == 1:
+                df2.loc[lct[j], 'ip'] = df2.loc[lct[j-1], 'ip'] + 1
+            else:
+                df2.loc[lct[j], 'ip'] = df2.loc[lct[j-1], 'ip']
+            j += 1
+        if len(indx) != 0:
+            for idx in indx:
+                df2.loc[idx, 'cookie'] = df2.loc[lct[-1], 'cookie'] + 1
+        if len(indx) != 0:
+            for idx in indx:
+                df2.loc[idx, 'ip'] = df2.loc[lct[-1], 'ip'] + 1
+        print('ip and cookie of', c1, 'is done.')
+    #——————————————————————————————————————————————————————————————————————————#
+    # 生成跳出与否
+    df2['jmp'] = list(map(lambda x, y: 1 if x >= y else 0,
+                          df2['jmp_prob'], df2['jmp_para']))
+    # 生成总浏览页数
+    df2['stay'] = df2['jmp'].apply(lambda x: 1 if x == 0 else 0)
+    #df2['pv_para'] = df2['store_mod'].apply(store_pageview_mod) * (df2['stay'])
+    df2['pv'] = df2['pv_para'].apply(pv_mod)
+    # 生成浏览时间
+    df2['vt_para'] = df2['pv'].apply(viewtime_mod)
+    df2['vt_para'] = df2['vt_para'].apply(lambda x: x*np.random.normal(1, 0.3))
+    df2['vt'] = df2['vt_para'].apply(
+        lambda x: 0-x if x <= 0 else x)*(df2['pv'])
+    df2['vt'] = list(map(lambda x, y: x*np.random.normal(2, 0.05)
+                         if x*2 > y else y, df2['pv'], df2['vt']))
+    result = df2[['datetime', 'ip', 'cookie', 'city', 'province', 'jmp', 'pv', 'vt',
+                  'sd']]  # ,'store'
+    return result
+
+
+def output(df3, vis):
+    with open('loggg.csv', 'w') as f:
+        #        writer = unicodecsv.writer(f)
+        writer = csv.writer(f)
+        hd = ['visits', 'datetime', 'ip', 'ck', 'jmp', 'pv',
+              'vt', 'sd', 'city', 'province']  # 'store',
+        writer.writerow(hd)
+        # f.write(cd.BOM_UTF8)
+        n = 0
+        while n < vis:
+            visits = 1
+            datetime = df3.loc[n, 'datetime']
+            ip = df3.loc[n, 'ip']
+            ck = df3.loc[n, 'cookie']
+            jmp = df3.loc[n, 'jmp']
+            pv = df3.loc[n, 'pv']
+            vt = df3.loc[n, 'vt']
+            sd = df3.loc[n, 'sd']
+            #store = df3.loc[n, 'store']
+            city = df3.loc[n, 'city']
+            province = df3.loc[n, 'province']
+            row = [visits, datetime, ip, ck, jmp,
+                   pv, vt, sd, city, province]  # store,
+            writer.writerow(row)
+            n += 1
+
+
+def pv_mod(x):
+    if x <= 2 and x > 0:
+        return int(2)
+    elif x == 0:
+        return int(1)
+    elif x < 0:
+        return int(2)
+    else:
+        return int(round(x))
+
+
+def viewtime_mod(x):
+    if x == 1:
+        return 10
+    elif x == 2:
+        return 20
+    else:
+        return 40
+
+# def store_pageview_mod(x):
+   # if x < 1:
+    #    return np.random.normal(4.18, 3)
+    # else:
+       # return np.random.normal(2.2, 2)
+
+
+def dayofweek_mod(x):
+    if x in range(1, 5):
+        return 1
+    elif x == 5:
+        return 2
+    elif x in (6, 7):
+        return 4
+
+
+def hr_mod(x):
+    return hr_ratio[x]
+
+
+def promotion_mod(x):
+    if x >= 501 and x <= 503:
+        return 20
+    elif x == 618:
+        return 100
+    elif x == 1111:
+        return 90
+    elif x == 1212:
+        return 70
+    elif x == 1:
+        return 10
+    else:
+        return 1
+
+
+hr_ratio = pd.read_sql('select ratio from hr_mod', NewEcom)['ratio']
+vis = int(pd.read_sql(
+    'select visits from visits where ratio = 1', NewEcom)['visits'])
+#vis = 200
+# this vis is just for quick testing
+
+if __name__ == '__main__':
+    df1 = key_datetime(df.copy(), vis)
+    df1.loc[:, 'visits'] = df1['visits'].astype('int64')
+    t1 = time.time()
+    df2 = pd.DataFrame(data={
+        # 'store_para': np.random.random(vis),
+        'addr_para': np.random.random(vis),
+        'sd_para': np.random.random(vis),
+        'jmp_para': np.random.random(vis),
+        'ip_para': np.random.random(vis),
+        'ck_para': np.random.random(vis),
+        'vt_para': np.random.normal(1, 0.2, size=vis)
+    }, index=range(0, vis))
+    t2 = time.time()
+    df3 = key_vis(df1.copy(), df2.copy())
+    t3 = time.time()
+    print(df3)
+    print('df1：', t1-t0, 'seconds')
+    print('df2：', t2-t1, 'seconds')
+    print('df3：', t3-t2, 'seconds')
+    output(df3, vis)
+    t4 = time.time()
+    print('output:', t4-t3, 'seconds')
+    print('总用时：', t4-t0, 'seconds')
