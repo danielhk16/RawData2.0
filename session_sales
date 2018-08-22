@@ -10,6 +10,14 @@ import pandas as pd
 from sqlalchemy import create_engine
 
 abs = sorted(dd)
+if condition:
+    pass
+else:
+    pass
+
+
+y = 1+1
+
 
 t0 = time.time()
 NewEcom = create_engine('mysql+pymysql://jm01:Arc@201801@localhost:3306/jm01')
