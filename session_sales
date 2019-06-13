@@ -314,7 +314,8 @@ def main():
             # dp_t8, dp_t8_dtkey = 'demo_inventory', 'Date'
             # dp_t9, dp_t9_dtkey = 'demo_inventory_trans', 'transaction_date'
             print('Generating Orders ... ')
-            df_visits, df_allp_invt_Comb_Upd, df_allp_invt_trans_Upd = orderGenerate(df_visits,refresh_dt)
+            # df_visits, df_allp_invt_Comb_Upd, df_allp_invt_trans_Upd = orderGenerate(df_visits,refresh_dt) #🚧#🚧
+            df_visits, df_allp_invt_Comb, df_allp_invt_Comb_Aft = orderGenerate(df_visits,refresh_dt) 
             # QA
             print('row of df_visits is  ', len(df_visits))
             
@@ -336,14 +337,17 @@ def main():
             # print('row of 🚧 is  ', len(🚧))
             # # 🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧
 
+            '''网页表部分 开始'''
             # PART 10 ======================================================================================
             # 从这里开始 以 df_visits 为基础 ，生成df_orders即订单表 和 df_sessions即网页浏览表
             # 订单表
+            '''网页表部分 结束'''
 
-            # 10.1 合并同一顾客的当日订单
+            # 10.1 合并同一顾客的当日订单 #🚧#🚧
 
             # 筛选出所有订单
-            df_orders = deepcopy(df_visits.loc[df_visits['trans_done'] == 1, :])
+            df_orders = deepcopy(df_visits.loc[df_visits['trans_done'] == 1, :])#🚧#🚧
+            print('row of df_orders is  ', len(df_orders))
             df_orders = df_orders.reset_index(drop=True)
             df_orders = df_orders[['visit_key', 'date', 'time_stamp', 'customer_key',
                        'product_key', 'promo_key',  'adj_sales', 'adj_quantity']]
@@ -398,7 +402,9 @@ def main():
         refresh_dt=refresh_dt + timedelta(days = 1)
     
     # 调试多天
-    return df_visits, df_sales_order, rows_sales_order_details, df_allp_invt_Comb_Upd, df_allp_invt_trans_Upd
+    # return df_visits, df_sales_order, rows_sales_order_details, df_allp_invt_Comb_Upd, df_allp_invt_trans_Upd #🚧#🚧
+    # return df_visits, df_sales_order, rows_sales_order_details, df_allp_invt_Comb, df_allp_invt_Comb_Aft
+    return df_visits, df_allp_invt_Comb, df_allp_invt_Comb_Aft
 
 
 def checkTableExists(engine, tablename):  # check if sales_order exists #tested
@@ -750,7 +756,7 @@ def fetchAllp_invtInfo(engine, tablename_1, dtkey_1, tablename_2, dtkey_2, invt_
         SELECT *
         FROM {0}
         WHERE {1} = '{2}'
-        """.format(tablename_1, dtkey_1, invt_dt, product_key)
+        """.format(tablename_1, dtkey_1, invt_dt)
 
     df_invt = pd.read_sql(sql_1, engine)
 
@@ -759,7 +765,7 @@ def fetchAllp_invtInfo(engine, tablename_1, dtkey_1, tablename_2, dtkey_2, invt_
         SELECT *
         FROM {0}
         WHERE {1} = '{2}' AND transaction_type = 'purchase'
-        """.format(tablename_2, dtkey_2, invt_dt, product_key)
+        """.format(tablename_2, dtkey_2, invt_dt)
 
     df_invt_trans = pd.read_sql(sql_2, engine)
 
@@ -767,13 +773,15 @@ def fetchAllp_invtInfo(engine, tablename_1, dtkey_1, tablename_2, dtkey_2, invt_
 
 def updateBalance(df_prod, df_inventory):
 
+    df_invent = df_inventory.copy()
+
     # 初始化两个seires：trans_done & adj_quantity
     list_td = []
     list_aq = []
 
     # 如果 表是空的 或者 Balance为0, 说明该产品目前无法购买
-    if df_inventory.empty or df_inventory['Balance'][0]==0:
-    
+    if df_invent.empty or df_invent['Balance'][0] == 0:
+
         for i in range(len(df_prod)):
 
             list_td.append(0)
@@ -782,15 +790,17 @@ def updateBalance(df_prod, df_inventory):
         list_bl = [0]
         '''⚠️ 问题：在Main()的9.2后，根据 buy_score == 1 and buy_quantity == 0 筛选有问题的部分，
         得到对应的customer_key和时间，然后再写一个遍历函数，寻找有库存的product_key, 重新分配给这个customer'''
-    
+
     # 如果表非空 或者 Balance不为0，说明可以购买
     else:
-        list_bl = [df_inventory['Balance'][0]]
-        
+        list_bl = [df_invent['Balance'][0]]
+        # print("该产品 原始 库存为", list_bl[0])
+
         for i in range(len(df_prod)):
 
             # 如果该条购买意愿 能够 被满足 (对于一个特定日期中的特定产品，表记录肯定只有一条)
             if df_prod['adj_quantity'][i] <= list_bl[0]:
+                # print("单次需求为", df_prod['adj_quantity'][i])
 
                 # 可以产生购买记录
                 list_td.append(1)
@@ -798,31 +808,33 @@ def updateBalance(df_prod, df_inventory):
 
                 # 更新 库存量
                 list_bl[0] = list_bl[0] - df_prod['adj_quantity'][i]
-                
+                # print("单次库存变更为", list_bl[0])
+
             # 如果该条购买意愿 不能够 被满足
             else:
                 # 如果还有库存,则购买余下的库存
-                if list_bl[0]!=0:
+                if list_bl[0] != 0:
 
                     # 可以产生购买记录
                     list_td.append(1)
                     list_aq.append(list_bl[0])
 
                     # 更新 库存量
-                    list_bl[0] = 0  
+                    list_bl[0] = 0
 
                 # 如果没有库存
                 else:
                     list_td.append(0)
                     list_aq.append(0)
-                
 
+    # print("所有记录的库存变更完成")
     df_prod['trans_done'] = list_td
     df_prod['adj_quantity'] = list_aq
 
-    df_inventory['Balance'] = list_bl
+    df_invent['Balance'] = list_bl[0]
+    # print("该产品 最终 库存更新为", df_invent['Balance'])
 
-    return df_prod, df_inventory
+    return df_prod, df_invent
 
 
 def orderGenerate(tbl, refresh_dt):
@@ -869,9 +881,9 @@ def orderGenerate(tbl, refresh_dt):
         df_op = df_op[['visit_key', 'department_cd', 'adj_quantity', 'trans_done']]
 
         # 抓取一个产品的库存表/备货表/合并表，应该各只有最多一条记录，或没有记录
-        df_op_invt = deepcopy(df_allp_invt.loc[df_allp_invt['product_key'] == pk, :])
+        df_op_invt = deepcopy(df_allp_invt.loc[df_allp_invt['Product_key'] == pk, :])
         df_op_invt_trans = deepcopy(df_allp_invt_trans.loc[df_allp_invt_trans['product_key'] == pk, :])
-        df_op_invt_Comb = deepcopy(df_allp_invt_Comb.loc[df_allp_invt_Comb['product_key'] == pk, :])
+        df_op_invt_Comb = deepcopy(df_allp_invt_Comb.loc[df_allp_invt_Comb['Product_key'] == pk, :])
         
         # 重置 index 方便循环
         df_op = df_op.reset_index(drop=True)
@@ -881,10 +893,12 @@ def orderGenerate(tbl, refresh_dt):
 
         '''如果该产品 是 生鲜类(34 Meats;37 Seafood)，检查并更新 备货表'''
         '''如果该产品 不是 生鲜类，检查并更新 合并表'''
-        if df_op['department_cd'] == 34 or df_op['department_cd'] == 37:
+        if df_op['department_cd'][0] == 34 or df_op['department_cd'][0] == 37:
             df_op, df_op_invt_trans_Aft = updateBalance(df_op, df_op_invt_trans)
+            df_op_invt_Comb_Aft = df_op_invt_Comb
         else:
             df_op, df_op_invt_Comb_Aft = updateBalance(df_op, df_op_invt_Comb)
+            df_op_invt_trans_Aft = df_op_invt_trans
 
         # 将 df_op append到 df_allp，将 更新后的 合并表 和 备货表 append 到 df_allp_invt_Aft 和 df_allp_invt_trans_Aft
         df_allp = df_allp.append(df_op)
@@ -895,18 +909,35 @@ def orderGenerate(tbl, refresh_dt):
     df.drop(['adj_quantity'], axis=1, inplace=True)
     df_allp.drop(['department_cd'], axis=1, inplace=True)
     df = pd.merge(df, df_allp, how='left', on='visit_key')
+    # QA
+    print('row of df is ', len(df))
     
     # 链接 df_allp_invt_Comb 和 df_allp_invt_Comb_Aft 来更新 合并表 信息
-    df_allp_invt_Comb.drop(['Balance'], axis=1, inplace=True)
-    df_allp_invt_Comb_Aft.rename(index=str, columns={"product_key": "Product_key_Aft"})
-    df_allp_invt_Comb_Upd = pd.merge(df_allp_invt_Comb, df_allp_invt_Comb_Aft[['Product_key_Aft', 'Balance']], how='left', left_on='product_key', right_on='Product_key_Aft')
+    # QA
+    print('row of df_allp_invt_Comb is ', len(df_allp_invt_Comb))
+    print('row of df_allp_invt_Comb_Aft is ', len(df_allp_invt_Comb_Aft))
+    df_allp_invt_Comb_Upd = pd.merge(df_allp_invt_Comb, df_allp_invt_Comb_Aft[['Product_key', 'Balance']], how='left', left_on='Product_key', right_on='Product_key')
+    print('row of df_allp_invt_Comb_Upd is ', len(df_allp_invt_Comb_Upd))
+    #🚧#🚧 合并后，x列是原始的balance，y列是该产品更新后的balance（存在大量空值，可以在df_allp_invt_Comb_Upd查看）
+    #🚧#🚧 目前有两种备选处理方法
+    #🚧#🚧 方法1 用x中的值填充y中的空值，然后删除x列，并重命名y列
+    df_allp_invt_Comb_Upd['Balance_y'].fillna(value='Balance_x', inplace=True)
+    df_allp_invt_Comb_Upd.drop(['Balance_x'], axis=1, inplace=True)
+    df_allp_invt_trans_Aft.rename(columns={'Balance_y': 'Balance'}, inplace=True)
+     #🚧#🚧 方法2 定位到该产品的所有行，用y中的值x中对应的值，然后删除y列,并重命名x列
 
-    # 链接 df_allp_invt_trans 和 df_allp_invt_trans_Aft 来更新 备货表 信息
-    df_allp_invt_trans.drop(['Balance'], axis=1, inplace=True)
-    df_allp_invt_trans_Aft.rename(index=str, columns={"product_key": "Product_key"})
+    # # 链接 df_allp_invt_trans 和 df_allp_invt_trans_Aft 来更新 备货表 信息
+    # QA
+    print('row of df_allp_invt_trans is ', len(df_allp_invt_trans))
+    print('row of df_allp_invt_trans_Aft is ', len(df_allp_invt_trans_Aft))
+    #🚧#🚧
     df_allp_invt_trans_Upd = pd.merge(df_allp_invt_trans, df_allp_invt_trans_Aft[['Product_key', 'Balance']], how='left', left_on='product_key', right_on='Product_key')
+    print('row of df_allp_invt_Comb_Upd is ', len(df_allp_invt_Comb_Upd))
+    #🚧#🚧
+   
 
-    return df, df_allp_invt_Comb_Upd, df_allp_invt_trans_Upd
+    # return df, df_allp_invt_Comb_Upd, df_allp_invt_trans_Upd #🚧#🚧
+    return df, df_allp_invt_Comb, df_allp_invt_Comb_Aft 
 
 
 def to_integer(dt_time):
@@ -993,14 +1024,17 @@ def InsertSalesData(engine, tablename, refresh_dt, df):
     return result
 
 
+
 # main program
 if __name__ == '__main__':
 
-    # df_demand, df_noise, df_ads, df_visits, df_price, df_cpp, df_promo, df_cpp_adj = main()
-    try:
-        df_visits,df_sales_order,rows_sales_order_details= main()
-    except UnboundLocalError:
-        print("Please try later.Or you can delete the last day sales data to test again. ")
+    # df_visits, df_sales_order, rows_sales_order_details, df_allp_invt_Comb, df_allp_invt_Comb_Aft = main()
+    df_visits,  df_allp_invt_Comb, df_allp_invt_Comb_Aft = main()
+    
+    # try:
+    #     df_visits,df_sales_order,rows_sales_order_details= main()
+    # except UnboundLocalError:
+    #     print("Please try later.Or you can delete the last day sales data to test again. ")
 
 
 time_end=time.time()
