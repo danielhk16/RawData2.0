@@ -311,36 +311,16 @@ def main():
             print('row of df_visits is ', len(df_visits))
 
             # 9.2 生成订单
-            # dp_t8, dp_t8_dtkey = 'demo_inventory', 'Date'
-            # dp_t9, dp_t9_dtkey = 'demo_inventory_trans', 'transaction_date'
             print('Generating Orders ... ')
             # df_visits, df_allp_invt_Comb_Upd, df_allp_invt_trans_Upd = orderGenerate(df_visits,refresh_dt) #🚧#🚧
             df_visits, df_allp_invt_Comb, df_allp_invt_Comb_Aft = orderGenerate(df_visits,refresh_dt) 
             # QA
             print('row of df_visits is  ', len(df_visits))
-            
-            # # 🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧
-            # # 9.3 找到必须要购买，但因为没有库存而购买失败的顾客行为
-            # df_bs_1 = deepcopy(df_visits.loc[df_visits['buy_score'] == 1, :])
-            # df_bs_1_td_0 = deepcopy(df_bs_1.loc[df_bs_1['trans_done'] == 0, :])
-            # # QA
-            # print('row of df_bs_1_td_0 is  ', len(df_bs_1_td_0))
 
-            # # 重新分配一个物品让其购买
-            # # 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧
-            # df_visits_addin = orderAddin(df_bs_1_td_0,refresh_dt)
-
-            # # 将刚刚生成的行为添加到df_visits中
-            # # 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧
-
-            # # QA
-            # print('row of 🚧 is  ', len(🚧))
-            # # 🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧
 
             '''网页表部分 开始'''
             # PART 10 ======================================================================================
             # 从这里开始 以 df_visits 为基础 ，生成df_orders即订单表 和 df_sessions即网页浏览表
-            # 订单表
             '''网页表部分 结束'''
 
             # 10.1 合并同一顾客的当日订单 #🚧#🚧
@@ -924,7 +904,8 @@ def orderGenerate(tbl, refresh_dt):
     df_allp_invt_Comb_Upd['Balance_y'].fillna(value='Balance_x', inplace=True)
     df_allp_invt_Comb_Upd.drop(['Balance_x'], axis=1, inplace=True)
     df_allp_invt_trans_Aft.rename(columns={'Balance_y': 'Balance'}, inplace=True)
-     #🚧#🚧 方法2 定位到该产品的所有行，用y中的值x中对应的值，然后删除y列,并重命名x列
+    #🚧#🚧 方法2 定位到该产品的所有行，用y中的值替换x中对应的值，然后删除y列,并重命名x列
+    df_allp_invt_Comb_Upd['col1'] = np.where(df['col1'] == 0, df['col2'], df['col1']) 
 
     # # 链接 df_allp_invt_trans 和 df_allp_invt_trans_Aft 来更新 备货表 信息
     # QA
