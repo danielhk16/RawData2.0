@@ -94,105 +94,85 @@ def fetchBalance(row):
 
     # 有购买意向的行为，包括两种人，1为必须购买成功，-1为不必购买成功
     if row['buy_score'] != 0:
-
         # print("有购买意向")
 
-        if row['department_cd'] == 34 or row['department_cd'] == 37:
-            BK = 'TransBalance'
-            # print("生鲜")
-        else:
-            BK = 'CombinedBalance'
-            # print("非生鲜")
+        while True:
 
-        dq = row['adj_quantity']
-        iq = df_allp_invt_Comb.loc[df_allp_invt_Comb['Product_key'] ==
-                                   row['product_key'], [BK]][BK].iloc[0]
+            if row['department_cd'] == 34 or row['department_cd'] == 37:
+                BK = 'TransBalance'
 
-        # print("需求量为", dq)
-        # print("库存量为", iq)
+            else:
+                BK = 'CombinedBalance'
 
-        # 能直接满足
-        if dq <= iq:
+            dq = row['adj_quantity']
+            iq = df_allp_invt_Comb.loc[df_allp_invt_Comb['Product_key'] ==
+                                       row['product_key'], [BK]][BK].iloc[0]
 
-            # print("能直接满足")
+            # 能直接满足
+            if dq <= iq:
 
-            row['trans_quantity'] = dq
+                row['trans_quantity'] = dq
 
-            df_allp_invt_Comb.loc[df_allp_invt_Comb['Product_key'] ==
-                                  row['product_key'], BK] = iq - row['trans_quantity']
+                df_allp_invt_Comb.loc[df_allp_invt_Comb['Product_key'] ==
+                                      row['product_key'], BK] = iq - row['trans_quantity']
 
-            row['trans_done'] = 1  # 🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧
+                row['trans_done'] = 1
 
-            # print("成功1, 交易数量为", row['trans_quantity'],
-            #   "交易状态为", row['trans_done'])
-            # print("库存从", iq, "变为",
-            #   df_allp_invt_Comb.loc[df_allp_invt_Comb['Product_key'] == row['product_key'], [BK]][BK].iloc[0])
-        # 不能直接满足
-        else:
-
-            # print("不能直接满足")
-
-            # 还有库存:成功
-            if iq != 0:
-
-                row['trans_quantity'] = iq
-
-                df_allp_invt_Comb.loc[df_allp_invt_Comb['Product_key']
-                                      == row['product_key'], BK] = 0
-
-                row['trans_done'] = 1  # 🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧
-
-                # print("成功2, 交易数量为", row['trans_quantity'],
-                #   "交易状态为", row['trans_done'])
-                # print("库存从", iq, "变为",
-                #   df_allp_invt_Comb.loc[df_allp_invt_Comb['Product_key'] == row['product_key'], [BK]][BK].iloc[0])
-
-            # 没有库存了
+            # 不能直接满足
             else:
 
-                # 必须购买
-                if row['buy_score'] == 1:
+                # 还有库存:成功
+                if iq != 0:
 
-                    row['trans_quantity'] = 0
-                    row['trans_done'] = 0
+                    row['trans_quantity'] = iq
 
-                    # 替换 product_key
-                    print("失败3，需要替换product_key", row['product_key'], "交易数量为",
-                          row['trans_quantity'], "交易状态为", row['trans_done'])
-                    # print(
-                    # "库存从", iq, "变为", df_allp_invt_Comb.loc[df_allp_invt_Comb['Product_key'] == row['product_key'], [BK]][BK].iloc[0])
+                    df_allp_invt_Comb.loc[df_allp_invt_Comb['Product_key']
+                                          == row['product_key'], BK] = 0
 
-                # 非必须购买
+                    row['trans_done'] = 1
+
+                # 没有库存了
                 else:
 
-                    row['trans_quantity'] = 0
-                    row['trans_done'] = 0
+                    # 必须购买
+                    if row['buy_score'] == 1:
 
-                    # print("失败4，非必须购买. 交易数量为",
-                    #   row['trans_quantity'], "交易状态为", row['trans_done'])
-                    # print(
-                    # "库存从", iq, "变为", df_allp_invt_Comb.loc[df_allp_invt_Comb['Product_key'] == row['product_key'], [BK]][BK].iloc[0])
+                        row['trans_quantity'] = 0
+                        row['trans_done'] = 0
 
-        # 如果必须购买的人没有购买成功，则继续循环，否则终止循环
-        if row['buy_score'] == 1 and row['trans_done'] == 0:
-            # ct = ct + 1
-            pass
+                    # 非必须购买
+                    else:
 
-        else:
-            # ct = ct + 1
-            pass
+                        row['trans_quantity'] = 0
+                        row['trans_done'] = 0
+
+            # 如果必须购买的人没有成功，继续循环，更换产品和需求量；否则可以终止循环
+            if row['buy_score'] == 1 and row['trans_done'] == 0:
+                # change Product_key
+                row['product_key'] = int(
+                    df_allp_invt_Comb['Product_key'].sample().iloc[0])
+                # change department_cd
+                row['department_cd'] = df_allp_invt_Comb.loc[df_allp_invt_Comb['Product_key'] ==
+                                                             row['product_key'], ['department_cd']]['department_cd'].iloc[0]
+                # change adj_quantity
+                row['adj_quantity'] = 1
+
+                continue
+
+            else:
+                # ct = ct + 1
+                break
 
         return row
 
     # 无购买意向的行为，不需更改
     else:
-        # ct = ct + 1
-        # print("失败5，无购买意向")
 
         return row
 
 
-df = df.apply(lambda row: fetchBalance(row), axis=1)
+tqdm.pandas()
+df = df.progress_apply(lambda row: fetchBalance(row), axis=1)
 
 
 # 🚧#🚧#🚧#🚧#🚧#🚧#🚧#🚧#🚧#🚧#🚧#🚧

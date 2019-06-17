@@ -709,12 +709,12 @@ df_ttt5 = df_ttt5.fillna(
 df_ttt5['Product_key'] = np.where(pd.isnull(
     df_ttt5['Product_key']), df_ttt5['product_key'], df_ttt5['Product_key'])
 df_ttt5.drop(['product_key'], axis=1, inplace=True)
-ldc = [11, 18, 18, 26, 26]
+ldc = [11, 12, 13, 15, 16]
 df_ttt5['department_cd'] = ldc
 
 # 虚拟的df，用来测fetchBalance函数
-data4 = {'product_key': [2, 5, 6, 2, 6], 'adj_quantity': [25, 30, 10, 10, 10], 'trans_quantity': [0, 0, 0, 0, 0], 'department_cd': [
-    18, 18, 26, 18, 26], 'buy_score': [1, -1, 0, 1, -1], 'trans_done': [0, 0, 0, 0, 0]}
+data4 = {'product_key': [2, 5, 6, 6, 6], 'adj_quantity': [25, 30, 10, 10, 10], 'trans_quantity': [0, 0, 0, 0, 0], 'department_cd': [
+    12, 15, 16, 16, 16], 'buy_score': [1, -1, 0, 1, -1], 'trans_done': [0, 0, 0, 0, 0]}
 df_ttt6 = pd.DataFrame(data4, columns=[
                        'product_key', 'adj_quantity', 'trans_quantity',  'department_cd', 'buy_score', 'trans_done'])
 
@@ -724,11 +724,10 @@ df_ttt6.index = df_ttt6.index + 1  # shifting index
 df_ttt6.sort_index(inplace=True)
 
 
-
 '''测试完之后要把 df_ttt5 改回 df_allp_invt_Comb, df_ttt6 改回 df '''
 
-
-df_ttt6 = df_ttt6.apply(lambda row: fetchBalance(row), axis=1)
+tqdm.pandas()
+df_ttt6 = df_ttt6.progress_apply(lambda row: fetchBalance(row), axis=1)
 
 
 # while True:
@@ -761,90 +760,108 @@ def fetchBalance(row):
 
         print("有购买意向")
 
-        if row['department_cd'] == 34 or row['department_cd'] == 37:
-            BK = 'TransBalance'
-            print("生鲜")
-        else:
-            BK = 'CombinedBalance'
-            print("非生鲜")
+        while True:
 
-        dq = row['adj_quantity']
-        iq = df_ttt5.loc[df_ttt5['Product_key'] ==
-                         row['product_key'], [BK]][BK].iloc[0]
+            if row['department_cd'] == 34 or row['department_cd'] == 37:
+                BK = 'TransBalance'
+                print("生鲜")
+            else:
+                BK = 'CombinedBalance'
+                print("非生鲜")
 
-        print("需求量为", dq)
-        print("库存量为", iq)
+            dq = row['adj_quantity']
+            iq = df_ttt5.loc[df_ttt5['Product_key'] ==
+                            row['product_key'], [BK]][BK].iloc[0]
 
-        # 能直接满足
-        if dq <= iq:
+            print("需求量为", dq)
+            print("库存量为", iq)
 
-            print("能直接满足")
+            # 能直接满足
+            if dq <= iq:
 
-            row['trans_quantity'] = dq
+                print("能直接满足")
 
-            df_ttt5.loc[df_ttt5['Product_key'] ==
-                        row['product_key'], BK] = iq - row['trans_quantity']
+                row['trans_quantity'] = dq
 
-            row['trans_done'] = 1  # 🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧
-
-            print("成功1, 交易数量为", row['trans_quantity'],
-                  "交易状态为", row['trans_done'])
-            print("库存从", iq, "变为",
-                  df_ttt5.loc[df_ttt5['Product_key'] == row['product_key'], [BK]][BK].iloc[0])
-        # 不能直接满足
-        else:
-
-            print("不能直接满足")
-
-            # 还有库存:成功
-            if iq != 0:
-
-                row['trans_quantity'] = iq
-
-                df_ttt5.loc[df_ttt5['Product_key']
-                            == row['product_key'], BK] = 0
+                df_ttt5.loc[df_ttt5['Product_key'] ==
+                            row['product_key'], BK] = iq - row['trans_quantity']
 
                 row['trans_done'] = 1  # 🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧
 
-                print("成功2, 交易数量为", row['trans_quantity'],
-                      "交易状态为", row['trans_done'])
+                print("成功1, 交易数量为", row['trans_quantity'],
+                    "交易状态为", row['trans_done'])
                 print("库存从", iq, "变为",
-                      df_ttt5.loc[df_ttt5['Product_key'] == row['product_key'], [BK]][BK].iloc[0])
-
-            # 没有库存了
+                    df_ttt5.loc[df_ttt5['Product_key'] == row['product_key'], [BK]][BK].iloc[0])
+            # 不能直接满足
             else:
 
-                # 必须购买
-                if row['buy_score'] == 1:
+                print("不能直接满足")
 
-                    row['trans_quantity'] = 0
-                    row['trans_done'] = 0
+                # 还有库存:成功
+                if iq != 0:
 
-                    # 替换 product_key
-                    print("失败3，需要替换product_key. 交易数量为",
-                          row['trans_quantity'], "交易状态为", row['trans_done'])
-                    print(
-                        "库存从", iq, "变为", df_ttt5.loc[df_ttt5['Product_key'] == row['product_key'], [BK]][BK].iloc[0])
+                    row['trans_quantity'] = iq
 
-                # 非必须购买
+                    df_ttt5.loc[df_ttt5['Product_key']
+                                == row['product_key'], BK] = 0
+
+                    row['trans_done'] = 1  # 🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧🚧
+
+                    print("成功2, 交易数量为", row['trans_quantity'],
+                        "交易状态为", row['trans_done'])
+                    print("库存从", iq, "变为",
+                        df_ttt5.loc[df_ttt5['Product_key'] == row['product_key'], [BK]][BK].iloc[0])
+
+                # 没有库存了
                 else:
 
-                    row['trans_quantity'] = 0
-                    row['trans_done'] = 0
+                    # 必须购买
+                    if row['buy_score'] == 1:
 
-                    print("失败4，非必须购买. 交易数量为",
-                          row['trans_quantity'], "交易状态为", row['trans_done'])
-                    print(
-                        "库存从", iq, "变为", df_ttt5.loc[df_ttt5['Product_key'] == row['product_key'], [BK]][BK].iloc[0])
+                        row['trans_quantity'] = 0
+                        row['trans_done'] = 0
 
-        # 如果必须购买的人没有购买成功，则继续循环，否则终止循环
-        if row['buy_score'] == 1 and row['trans_done'] == 0:
-            # ct = ct + 1
-            pass
+                        # 替换 product_key
+                        print("失败3，需要替换product_key. 交易数量为",
+                            row['trans_quantity'], "交易状态为", row['trans_done'])
+                        print(
+                            "库存从", iq, "变为", df_ttt5.loc[df_ttt5['Product_key'] == row['product_key'], [BK]][BK].iloc[0])
 
-        else:
-            # ct = ct + 1
-            pass
+                    # 非必须购买
+                    else:
+
+                        row['trans_quantity'] = 0
+                        row['trans_done'] = 0
+
+                        print("失败4，非必须购买. 交易数量为",
+                            row['trans_quantity'], "交易状态为", row['trans_done'])
+                        print(
+                            "库存从", iq, "变为", df_ttt5.loc[df_ttt5['Product_key'] == row['product_key'], [BK]][BK].iloc[0])
+
+            # 如果必须购买的人没有成功，继续循环，更换产品和需求量；否则可以终止循环
+            if row['buy_score'] == 1 and row['trans_done'] == 0:
+                # ct = ct + 1
+                # change Product_key
+                oldkey = row['product_key']
+                row['product_key'] = int(df_ttt5['Product_key'].sample().iloc[0])
+                newkey = row['product_key']
+                print("Product_key changes from ",oldkey,"to ",newkey)
+                # change department_cd
+                olddept = row['department_cd']
+                row['department_cd'] = df_ttt5.loc[df_ttt5['Product_key'] == row['product_key'], ['department_cd']]['department_cd'].iloc[0]
+                newdept = row['department_cd']
+                print("Department_cd changes from ",olddept,"to ",newdept)
+                # change adj_quantity
+                oldquant = row['adj_quantity']
+                row['adj_quantity'] =  1
+                newquant = row['adj_quantity']
+                print("Adj_quantity changes from ",oldquant,"to ",newquant)
+
+                continue
+
+            else:
+                # ct = ct + 1
+                break
 
         return row
 
