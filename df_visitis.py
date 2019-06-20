@@ -45,10 +45,13 @@ def findRefresh_dt(engine, tablename, dtkey):  # find refresh date #working
 
         df_maxdt=pd.read_sql(sql, engine)
 
-        refresh_dt=df_maxdt['max_dt'][0] + timedelta(days = 1)
-        refresh_dt = refresh_dt.date()
-        print("refresh_dt is {0}".format(refresh_dt))
-        print("type of refresh_dt is {0}".format(type(refresh_dt)))
+        if pd.isnull(df_maxdt['max_dt'][0]):
+            refresh_dt=start_dt
+        else:    
+            refresh_dt=df_maxdt['max_dt'][0] + timedelta(days = 1)
+            refresh_dt = refresh_dt.date()
+            print("refresh_dt is {0}".format(refresh_dt))
+            # print("type of refresh_dt is {0}".format(type(refresh_dt)))
 
     else:
         refresh_dt=start_dt
@@ -146,98 +149,74 @@ def trans_into_dict(row_value):
         return eval(row_value)
 
 
-def promo_affects(tbl):
 
-    # 类型转换
-    tbl['discount_type']=tbl['discount_type'].astype(str)
-    tbl['quantity']=tbl['quantity'].astype(float) 
-    tbl['price']=tbl['price'].astype(float)
-    tbl['fcp_treatment']=tbl['fcp_treatment'].apply(trans_into_dict)
-    tbl['bp_treatment']=tbl['bp_treatment'].apply(trans_into_dict)
-    tbl['mp_treatment']=tbl['mp_treatment'].apply(trans_into_dict)
+def promo_affects(row):
 
-    # 计算原始销售额
-    tbl['sales']=tbl['quantity'] * tbl['price']
+    # fixed_cart
+    if row['discount_type'] == 'fixed_cart':
 
-    # 初始化两个seires
-    # adjusted sales & adjusted quantity
-    list_as=[]
-    list_aq=[]
+        if row['sales'] >= row['fcp_treatment']['full']:
 
-    # 调整销售额、成交量
-    for i in range(len(tbl)):
+            row['adj_sales'] = row['sales'] - row['fcp_treatment']['minus']
 
-        # fixed_cart
-        if tbl['discount_type'][i] == 'fixed_cart':
-
-            if tbl['sales'][i] >= tbl['fcp_treatment'][i]['full']:
-                list_as.append(tbl['sales'][i] -
-                               tbl['fcp_treatment'][i]['minus'])
-
-            else:
-                list_as.append(tbl['sales'][i])
-
-            list_aq.append(tbl['quantity'][i])
-
-        # percent
-        elif tbl['discount_type'][i] == 'percent':
-
-            list_as.append(tbl['sales'][i] * tbl['pp_treatment'][i])
-
-            list_aq.append(tbl['quantity'][i])
-
-        # bogo
-        elif tbl['discount_type'][i] == 'bogo':
-
-            list_as.append(tbl['sales'][i])
-
-            # 除法取整
-            quotient=tbl['quantity'][i] // tbl['bp_treatment'][i]['buy']
-
-            # 原始成交量是Q件，买x送y, Q//x 取整得quot，调整后成交量 = Q + quot * y
-            list_aq.append(tbl['quantity'][i] +
-                           quotient * tbl['bp_treatment'][i]['get free'])
-
-        # multibuy
-        elif tbl['discount_type'][i] == 'multibuy':
-
-            # 除法取整
-            quotient = tbl['quantity'][i] // tbl['mp_treatment'][i]['quantity']
-
-            # 除法取余
-            remainder = tbl['quantity'][i] % tbl['mp_treatment'][i]['quantity']
-
-            if quotient >= 1:
-                list_as.append(quotient *
-                               tbl['mp_treatment'][i]['price'] +
-                               remainder * tbl['price'][i])
-
-            else:
-                list_as.append(tbl['sales'][i])
-
-            list_aq.append(tbl['quantity'][i])
-
-        # xxoff
-        elif tbl['discount_type'][i] == 'xxoff':
-
-            list_as.append(tbl['sales'][i] - tbl['xp_treatment'][i])
-
-            list_aq.append(tbl['quantity'][i])
-
-        # null值，没有促销卷
         else:
-            list_as.append(tbl['sales'][i])
+            row['adj_sales'] = row['sales']
 
-            list_aq.append(tbl['quantity'][i])
+        row['adj_quantity'] = row['quantity']
 
-    # QA
-    print("length of list_as is ", len(list_as))
-    print("length of list_aq is ", len(list_aq))
+    # percent
+    elif row['discount_type'] == 'percent':
 
-    tbl['adj_sales'] = list_as
-    tbl['adj_quantity'] = list_aq
+        row['adj_sales'] = row['sales'] * row['pp_treatment']
 
-    return tbl
+        row['adj_quantity'] = row['quantity']
+
+    # bogo
+    elif row['discount_type'] == 'bogo':
+
+        row['adj_sales'] = row['sales']
+
+        # 除法取整
+        quotient = row['quantity'] // row['bp_treatment']['buy']
+
+        # 原始成交量是Q件，买x送y, Q//x 取整得quot，调整后成交量 = Q + quot * y
+        row['adj_quantity'] = row['quantity'] + \
+            quotient * row['bp_treatment']['get free']
+
+    # multibuy
+    elif row['discount_type'] == 'multibuy':
+
+        # 除法取整
+        quotient = row['quantity'] // row['mp_treatment']['quantity']
+
+        # 除法取余
+        remainder = row['quantity'] % row['mp_treatment']['quantity']
+
+        if quotient >= 1:
+            row['adj_sales'] = quotient * \
+                row['mp_treatment']['price'] + remainder * row['price']
+
+        else:
+            row['adj_sales'] = row['sales']
+
+        row['adj_quantity'] = row['quantity']
+
+    # xxoff
+    elif row['discount_type'] == 'xxoff':
+
+        row['adj_sales'] = row['sales'] - row['xp_treatment']
+
+        row['adj_quantity'] = row['quantity']
+
+    # null值，没有促销卷
+    else:
+        row['adj_sales'] = row['sales']
+
+        row['adj_quantity'] = row['quantity']
+
+    return row
+
+
 
 
 def score_cs(row_value):
@@ -381,6 +360,209 @@ def fetchAllp_invtInfo(engine, tablename_1, dtkey_1, tablename_2, dtkey_2, invt_
     return df_invt, df_invt_trans
 
 
+def fetchBalance(row, df_allp_invt_Comb, df_department, df_price):
+
+    # print("row begins...............")
+    # print("product_key is", row['product_key'])
+
+    # 有购买意向的行为，包括两种人，1为必须购买成功，-1为不必购买成功
+    if row['buy_score'] != 0:
+        # print("有购买意向")
+
+        while True:
+
+            if row['department_cd'] == 34 or row['department_cd'] == 37:
+                BK = 'TransBalance'
+
+            else:
+                BK = 'CombinedBalance'
+
+            dq = row['adj_quantity']
+            iq = df_allp_invt_Comb.loc[df_allp_invt_Comb['Product_key'] ==
+                                       row['product_key'], [BK]][BK].iloc[0]
+
+            # 能直接满足
+            if dq <= iq:
+
+                row['trans_quantity'] = dq
+
+                df_allp_invt_Comb.loc[df_allp_invt_Comb['Product_key'] ==
+                                      row['product_key'], BK] = iq - row['trans_quantity']
+
+                row['trans_done'] = 1
+
+            # 不能直接满足
+            else:
+
+                # 还有库存:成功
+                if iq != 0:
+
+                    row['trans_quantity'] = iq
+
+                    df_allp_invt_Comb.loc[df_allp_invt_Comb['Product_key']
+                                          == row['product_key'], BK] = 0
+
+                    row['trans_done'] = 1
+
+                # 没有库存了
+                else:
+
+                    # 必须购买
+                    if row['buy_score'] == 1:
+
+                        row['trans_quantity'] = 0
+                        row['trans_done'] = 0
+
+                    # 非必须购买
+                    else:
+
+                        row['trans_quantity'] = 0
+                        row['trans_done'] = 0
+
+            # 如果必须购买的人没有成功，继续循环，更换产品、部门和需求量，更新促销信息，更新销量、价格和销售额
+            # 否则可以终止循环
+            if row['buy_score'] == 1 and row['trans_done'] == 0:
+
+                # change Product_key, 只能在已经上架的产品中寻找
+                row['product_key'] = int(
+                    df_price['product_key'].sample().iloc[0])
+                # change department_cd
+                row['department_cd'] = df_department.loc[df_department['product_key'] ==
+                                                             row['product_key'], ['department_cd']]['department_cd'].iloc[0]
+                # change adj_quantity,price,adj_sales
+                row['adj_quantity'] = 1
+                row['price'] = df_price.loc[df_price['product_key'] ==
+                                            row['product_key'], ['price']]['price'].iloc[0]
+                row['adj_sales'] = row['adj_quantity'] * row['price']
+
+                continue
+
+            else:
+                # ct = ct + 1
+                break
+
+        return row
+
+    # 无购买意向的行为，不需更改
+    else:
+
+        return row
+
+
+
+def orderGenerate(tbl, refresh_dt, df_department, df_price):
+
+    # 一、需求表准备
+    df = tbl.copy()
+    # 打上随机时间戳，并按时间先后排序，初始化trans_done,CombinedBalance,TransBalance
+    time_stamp = randomTimeStamp(refresh_dt, len(df))
+    df['time_stamp'] = time_stamp
+    df.sort_values(by='time_stamp', ascending=True, inplace=True)
+    df['visit_key'] = range(1, len(df) + 1)
+    df['trans_done'] = 0
+    df['trans_quantity'] = 0
+    df = df.reset_index(drop=True)
+    # adding a dummy row to deal with df.apply() which is designed to run twice on first row/column
+    df.loc[-1] = df.iloc[0]
+    df['buy_score'].loc[-1] = 0  # critical
+    df.index = df.index + 1  # shifting index
+    df.sort_index(inplace=True)
+    print('df is Ready ', len(df))
+
+    # 二、库存表准备
+    # 库存日为刷新日的前一天：是否能成交需要检查的是前一天的库存和前一天的备货
+    invt_dt = refresh_dt - timedelta(days=1)
+
+    # 1.1 抓取所有产品 库存日(刷新日前一天) 的 静态 合并库存CombinedBalance 和 备货库存TransBalance
+    df_allp_invt, df_allp_invt_trans = fetchAllp_invtInfo(
+        oridata, dp_t8, dp_t8_dtkey, dp_t9, dp_t9_dtkey, invt_dt)
+
+    # 1.2 合并 df_allp_invt 和 df_allp_invt_trans
+    print('merging df_allp_invt and df_allp_invt_trans into df_allp_invt_Comb... ')
+    df_allp_invt_Comb = pd.merge(df_allp_invt, df_allp_invt_trans[[
+                                 'product_key', 'quantity']], how='outer', left_on='Product_key', right_on='product_key')
+    # QA
+    if len(df_allp_invt_Comb) == len(df_allp_invt) + len(df_allp_invt_trans) - len(set(df_allp_invt['Product_key']) & set(df_allp_invt_trans['product_key'])):
+        pass
+    else:
+        print("WARNING 1: df_allp_invt_Comb QA is WRONG !!!!!!!  PLEASE CHECK !!!!!!!!!! ")
+    # print('row of df_allp_invt_Comb is ', len(df_allp_invt_Comb))
+    # 填充Quantity 和 quantity 缺失值，得到 合并库存CombinedBalance 和 备货库存TransBalance
+    df_allp_invt_Comb = df_allp_invt_Comb.fillna(
+        {'Quantity': 0, 'quantity': 0})
+    df_allp_invt_Comb['CombinedBalance'] = df_allp_invt_Comb['Quantity'] + \
+        df_allp_invt_Comb['quantity']
+    df_allp_invt_Comb['TransBalance'] = df_allp_invt_Comb['quantity']
+    # 填充 Product_key 缺失值,删除多余的product列
+    df_allp_invt_Comb['Product_key'] = np.where(np.isnan(
+        df_allp_invt_Comb['Product_key']), df_allp_invt_Comb['product_key'], df_allp_invt_Comb['Product_key'])
+    df_allp_invt_Comb.drop(['product_key'], axis=1, inplace=True)
+
+    # 1.3 合并 df_allp_invt_Comb 和 df_demand_pk（需求产品）
+    series_demand_pk = df['product_key'].drop_duplicates()
+    df_demand_pk = pd.DataFrame(series_demand_pk, columns=['product_key'])
+    print('merging demand products to df_allp_invt_Comb ... ')
+    len_bf_merge = len(df_allp_invt_Comb)
+    set_bf_merge = set(df_allp_invt_Comb['Product_key'])
+    df_allp_invt_Comb = pd.merge(df_allp_invt_Comb, df_demand_pk[[
+                                 'product_key']], how='outer', left_on='Product_key', right_on='product_key')
+    # QA
+    if len(df_allp_invt_Comb) == len_bf_merge + len(df_demand_pk) - len(set_bf_merge & set(df_demand_pk['product_key'])):
+        pass
+    else:
+        print("WARNING 2: df_allp_invt_Comb QA is WRONG !!!!!!!  PLEASE CHECK !!!!!!!!!! ")
+    # print('row of df_allp_invt_Comb is ', len(df_allp_invt_Comb))
+    # 填充CombinedBalance 和 TransBalance缺失值
+    df_allp_invt_Comb = df_allp_invt_Comb.fillna(
+        {'CombinedBalance': 0, 'TransBalance': 0})
+    # 填充 Product_key 缺失值,删除多余的product列
+    df_allp_invt_Comb['Product_key'] = np.where(pd.isnull(
+        df_allp_invt_Comb['Product_key']), df_allp_invt_Comb['product_key'], df_allp_invt_Comb['Product_key'])
+    df_allp_invt_Comb.drop(['product_key'], axis=1, inplace=True)
+
+    # 1.4 合并 df_allp_invt_Comb 和 df_prodOnline_pk（上架产品）
+    # 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧
+    series_prodOnline_pk = df_price['product_key'].drop_duplicates()
+    df_prodOnline_pk = pd.DataFrame(series_prodOnline_pk, columns=['product_key'])
+    print('merging online products to df_allp_invt_Comb ... ')
+    len_bf_merge = len(df_allp_invt_Comb)
+    set_bf_merge = set(df_allp_invt_Comb['Product_key'])
+    df_allp_invt_Comb = pd.merge(df_allp_invt_Comb, df_prodOnline_pk[[
+                                 'product_key']], how='outer', left_on='Product_key', right_on='product_key')
+    # QA
+    if len(df_allp_invt_Comb) == len_bf_merge + len(df_prodOnline_pk) - len(set_bf_merge & set(df_prodOnline_pk['product_key'])):
+        pass
+    else:
+        print("WARNING 3: df_allp_invt_Comb QA is WRONG !!!!!!!  PLEASE CHECK !!!!!!!!!! ")
+    # print('row of df_allp_invt_Comb is ', len(df_allp_invt_Comb))
+    # 填充CombinedBalance 和 TransBalance缺失值
+    df_allp_invt_Comb = df_allp_invt_Comb.fillna(
+        {'CombinedBalance': 0, 'TransBalance': 0})
+    # 填充 Product_key 缺失值,删除多余的product列
+    df_allp_invt_Comb['Product_key'] = np.where(pd.isnull(
+        df_allp_invt_Comb['Product_key']), df_allp_invt_Comb['product_key'], df_allp_invt_Comb['Product_key'])
+    df_allp_invt_Comb.drop(['product_key'], axis=1, inplace=True)
+    # 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧
+
+    # 1.5 链接 department_cd 到 df_allp_invt_Comb
+    print('merging department to df_allp_invt_Comb ... ')
+    df_allp_invt_Comb = pd.merge(df_allp_invt_Comb, df_department,
+                                 how='left', left_on='Product_key', right_on='product_key')
+    # 删除多余的product列
+    df_allp_invt_Comb.drop(['product_key'], axis=1, inplace=True)
+    # QA
+    print('df_allp_invt_Comb is Ready, number of rows is ', len(df_allp_invt_Comb))
+
+    # 三、生成订单
+    tqdm.pandas()
+    print('Generating Orders ... ')
+    df = df.progress_apply(lambda row: fetchBalance(row, df_allp_invt_Comb,df_department,df_price), axis=1)
+    # deleting the dummy row that was added before to avoid twice run on first row
+    df = df.iloc[1:]
+
+    return df, df_allp_invt_Comb
+
+
 def to_integer(dt_time):
 
     return 10000*dt_time.year + 100*dt_time.month + dt_time.day
@@ -395,6 +577,77 @@ def orderkey(row):
     a = math.floor(math.log10(y))
 
     return int(x*10**(1+a)+y)
+
+
+def sales_orders(df_orders):
+
+    # 找出所有 customer_key
+    df_ck = df_orders['customer_key'].drop_duplicates()
+    df_ck = df_ck.reset_index(drop=True)
+
+    # 初始化一个空的DataFrame
+    df_allc = pd.DataFrame()
+
+    # 对于所有的 customer_key,按顺序取出每一个key
+    for i in tqdm(range(len(df_ck))):
+
+        # get one customer's key
+        ck = df_ck[i]
+
+        # fetch all recourds of this customer
+        df_oc = deepcopy(df_orders.loc[df_orders['customer_key'] == ck, :])
+        df_oc = df_oc.reset_index(drop=True)
+
+        # 初始化flag_ct
+        flag_ct = 0
+
+        # 统计 combine_flag <=2 (两个标准差左侧的面积) 的行数
+        for j in range(len(df_oc)):
+
+            if df_oc['combine_flag'][j] <= 2:
+
+                flag_ct += 1
+
+        # 判断 combine_flag <=2的行数 是否大于1
+        if flag_ct > 1:
+
+            # 获取combine_flag <=2 行数 的 最大order_key
+            df_flag_ct = deepcopy(df_oc.loc[df_oc['combine_flag'] <= 2, :])
+            max_orderkey = df_flag_ct['order_key'].max()
+
+            # 在该顾客的记录中，将 combine_flag <=2 的记录的order_key 修改为最大order_key,剩余部分不变
+            df_oc['order_key'] = np.where(
+                df_oc['combine_flag'] <= 2, max_orderkey, df_oc['order_key'])
+
+        # 将 df_op append到 df_allp
+        df_allc = df_allc.append(df_oc)
+
+    return df_allc
+
+
+def InsertSalesData(engine, tablename, refresh_dt, df):
+
+    # 查询当天是否已经有销售数据
+    count = pd.read_sql(
+        """ SELECT COUNT(*) as ct FROM {0} WHERE date = '{1}' """.format(tablename, refresh_dt), engine)
+
+    # 如果当天已经有销售数据，删除掉
+    if count['ct'][0] != 0:
+        print("Deleting sales data from {0} on {1}".format(tablename, refresh_dt))
+        with engine.begin() as conn:
+            conn.execute(""" DELETE FROM {0} WHERE date = '{1}' """.format(tablename, refresh_dt))
+
+    # 插入当天销售数据
+    print("Inserting sales data into {0} on {1}".format(tablename, refresh_dt))
+    df.to_sql('{0}'.format(tablename),if_exists='append', con=engine, index=False)
+
+    # 查询当天销售数据
+    result = engine.execute(
+        """SELECT COUNT(*) as ct FROM {0} WHERE date = '{1}' """.format(tablename, refresh_dt)).fetchall()
+
+    return result
+
+
 
 time_start=time.time()
 print('Start at', time.strftime("%H:%M:%S") )
@@ -430,21 +683,11 @@ dp_t15 = 'sales_order'
 result_tbl = 'sales_order'
 result_tbl_dtkey = 'date'
 # find refresh date
+refresh_dt = datetime.date(2011, 5, 18)
 refresh_dt = findRefresh_dt(oridata, result_tbl, result_tbl_dtkey)
 # QA
 print("refresh_dt begins at", refresh_dt)
 
-# 开始每一天的循环
-# while refresh_dt <= end_dt:
-
-# 找到库存表最大日期
-invt_maxdt = findMax_dt(oridata, dp_t8, dp_t8_dtkey)
-
-# 找到需求表最大日期
-dmd_maxdt = findMax_dt(oridata, dp_t10, dp_t10_dtkey)
-
-# 判断库存表和需求表是否能够满足当天生产所需的数据
-# if refresh_dt <= invt_maxdt + timedelta(days=1) and refresh_dt <= dmd_maxdt:
 
 # PART 1 ======================================================================================
 
@@ -614,22 +857,26 @@ print('row of df_promo is ', len(df_promo))
 print(
     'merging promotions to df_visits: visit_key，customers and product info... ')
 df_visits['visit_key'] = range(1, len(df_visits) + 1)
+
+""" 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧 """
 df_cpp = pd.merge(df_visits[['visit_key', 'customer_key', 'product_key', 'quantity', 'price']], df_promo,
                   how='left', on=['customer_key', 'product_key'])
 # QA
 print('row of df_cpp is ', len(df_cpp))
+""" 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧 🚧 """
+# 类型转换和计算
+df_cpp['discount_type'] = df_cpp['discount_type'].astype(str)
+df_cpp['quantity'] = df_cpp['quantity'].astype(float)
+df_cpp['price'] = df_cpp['price'].astype(float)
+df_cpp['fcp_treatment'] = df_cpp['fcp_treatment'].apply(trans_into_dict)
+df_cpp['bp_treatment'] = df_cpp['bp_treatment'].apply(trans_into_dict)
+df_cpp['mp_treatment'] = df_cpp['mp_treatment'].apply(trans_into_dict)
+df_cpp['sales'] = df_cpp['quantity'] * df_cpp['price']
 
 # 7.2 在df_cpp中，根据价格、数量和促销类型，计算并新增sales, adj_sales 和 adj_quantity
-'''小问题：由于demo数据的原因，df_cpp基本都是空值，测试promo_affect函数需要构建一个虚拟的df'''
 print('calculating adjusted sales and quantities ... ')
-df_cpp_adj = promo_affects(df_cpp)
-df_cpp_adj = df_cpp_adj[['visit_key', 'sales', 'promo_key',
-                         'discount_type', 'adj_quantity', 'adj_sales']]
-
-# 链接 df_visits
-print('merging adjusted sales and quantities to df_visits ... ')
-df_visits = pd.merge(df_visits, df_cpp_adj,
-                     how='left', on='visit_key')
+tqdm.pandas()
+df_cpp = df_cpp.progress_apply(lambda row: promo_affects(row), axis=1)
 # QA
 print('row of df_visits is ', len(df_visits))
 
@@ -660,7 +907,7 @@ print('row of df_visits is ', len(df_visits))
 '''以上代码用来调试一天的数据，到生成订单前的df_visits为止'''
 
 
-'''##########   以下：小数据 测试用 验证任何想法   ##################'''
+'''##########   以下：order 小数据 测试用 验证任何想法   ##################'''
 from tqdm import tqdm
 import csv
 import math
@@ -673,6 +920,7 @@ import time
 from sqlalchemy import create_engine
 from copy import deepcopy
 # full join test
+# 1.2 合并 df_allp_invt 到 df_allp_invt_trans
 data1 = {'Product_key': [1, 2, 3],
          'Quantity': [10, 10, 10]
          }
@@ -690,12 +938,11 @@ else:
 df_ttt3 = df_ttt3.fillna({'Quantity': 0, 'quantity': 0})
 df_ttt3['CombinedBalance'] = df_ttt3['Quantity'] + df_ttt3['quantity']
 df_ttt3['TransBalance'] = df_ttt3['quantity']
-
 df_ttt3['Product_key'] = np.where(np.isnan(
     df_ttt3['Product_key']), df_ttt3['product_key'], df_ttt3['Product_key'])
-
 df_ttt3.drop(['product_key'], axis=1, inplace=True)
 
+# 1.3 抓取当天所有需求的产品主键（去重防止笛卡尔积, 链接 pk 到 df_allp_invt_Comb)
 data3 = {'product_key': [2, 3, 6], 'quantity': [20, 20, 20]}
 df_ttt4 = pd.DataFrame(data3, columns=['product_key', 'quantity'])
 df_pk = df_ttt4['product_key'].drop_duplicates()
@@ -872,12 +1119,42 @@ def fetchBalance(row):
 
         return row
 
-'''#########   以上：小数据 测试用 验证任何想法   ##################'''
+'''#########   以上：order 小数据 测试用 验证任何想法   ##################'''
 
 
 df_ttt7 = df.loc[df['buy_score'] == 1] 
 
 df_ttt8 = df_ttt7.loc[df['trans_done'] == 0] 
 
-df.loc[df['product_key'] == 110669 ]
-110669
+df_ttt9 = df.loc[df['trans_done'] == 1] 
+
+
+'''#########   以下：promo 小数据 测试用 验证任何想法   ##################'''
+df_ttt7 = df_promo.sample(n=500)
+
+# 类型转换和计算
+df_ttt7['discount_type'] = df_ttt7['discount_type'].astype(str)
+# df_ttt7['quantity'] = df_ttt7['quantity'].astype(float)
+# df_ttt7['price'] = df_ttt7['price'].astype(float)
+df_ttt7['fcp_treatment'] = df_ttt7['fcp_treatment'].apply(trans_into_dict)
+df_ttt7['bp_treatment'] = df_ttt7['bp_treatment'].apply(trans_into_dict)
+df_ttt7['mp_treatment'] = df_ttt7['mp_treatment'].apply(trans_into_dict)
+# df_ttt7['sales'] = df_ttt7['quantity'] * df_ttt7['price']
+
+tqdm.pandas()
+df_ttt7 = df_ttt7.progress_apply(lambda row: test_pa(row), axis=1)
+
+def test_pa(row):
+    # fixed_cart
+    if row['discount_type'] == 'fixed_cart':
+
+        row['fcp'] = row['fcp_treatment']['full']
+
+    # percent
+    
+    else:
+        pass
+
+    return row
+
+'''#########   以上：promo 小数据 测试用 验证任何想法   ##################'''
