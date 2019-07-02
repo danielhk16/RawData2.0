@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""
+""" 
 Created on Wed May 23 10:51:15 2018
 
 @author: jm01 (Chonglou)
 
 @ Completed on ???
-"""
+ """
 
 # -*- coding: utf-8 -*-
-"""
+""" 
 ==========================================================
 This script is work to generate lab data 2.0(USER WEB LOG AND TRANSACTIONS)
 ==========================================================
@@ -31,7 +31,7 @@ originaldata.promo_received
 originaldata.promotion1
 originaldata.inventory
 originaldata.inventory_transactions
-"""
+ """
 # !!!!!Please Make Sure Available Memory Have At Least 32G
 
 # import sys
@@ -46,10 +46,6 @@ from datetime import *
 import time 
 from sqlalchemy import create_engine
 from copy import deepcopy
-# deepcopy: forces objects to be copied in memory, so that methods called on the new objects are not applied to the source object.
-
-time_start=time.time()
-print('Start at', time.strftime("%H:%M:%S") )
 
 # global variables
 oridata = create_engine(
@@ -518,9 +514,12 @@ def trans_into_dict(row_value):
     if row_value == None:
         return None
 
+    elif row_value == "":
+        return None
+    
     elif pd.isnull(row_value):
         return None
-
+    
     else:
         return eval(row_value)
 
@@ -1028,15 +1027,19 @@ def InsertSalesData(engine, tablename, refresh_dt, df):
 # main program
 if __name__ == '__main__':
 
+    time_start=time.time()
+    print('Start at', time.strftime("%H:%M:%S") )
+
     # df_visits, df_sales_order, rows_sales_order_details,df_allp_invt_Comb = main()
     
     try:
         df_visits, df_sales_order, rows_sales_order_details,df_allp_invt_Comb = main()
     except UnboundLocalError:
         print("Please try later.Or you can delete the last day sales data to test again. ")
+    
+    time_end=time.time()
+    print('End at', time.strftime("%H:%M:%S") )
+    print('totally cost',(time_end-time_start)/60, 'mins')
+    print('#############################################')
 
 
-time_end=time.time()
-print('End at', time.strftime("%H:%M:%S") )
-print('totally cost',(time_end-time_start)/60, 'mins')
-print('#############################################')
