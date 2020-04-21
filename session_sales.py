@@ -72,7 +72,6 @@ dp_t10, dp_t10_dtkey = 'demand', 'date'
 dp_t11, dp_t11_dtkey = 'noise', 'date'
 dp_t12 = 'demo_tmp_dim_product_purchases'
 dp_t13 = 'product'
-
 dp_t14 = 'sales_order_details'
 dp_t15 = 'sales_order'    
 result_tbl = 'sales_order'

@@ -1,0 +1,37 @@
+create table ClFree
+(
+    title_name VARCHAR (255)
+    title_url VARCHAR（2083）
+    thumbnail VARCHAR（2083）
+    price DOUBLE DOUBLE（255）
+    deal-cnt VARCHAR
+    (20)
+    shopname VARCHAR
+    (50)
+    loc VARCHAR
+    (20)
+    product_name VARCHAR
+    (255)
+    sales_quantity VARCHAR
+    (20)
+    comments int
+    (20)
+    volume_parameter int
+    (20)
+    raw_parameters  VARCHAR
+    (2083)
+    raw_SKUs VARCHAR
+    (255)
+    popularity int
+    (20)
+    shop_desc_rating double
+    (10)
+    shop_service_rating double
+    (10)
+    shop_logistic_rating double
+    (10)
+    product_rating double
+    (10)
+    most_comments VARCHAR
+    (255)
+)
